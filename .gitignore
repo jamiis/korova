@@ -1,6 +1,9 @@
 # files
 keys.py
 
+# dirs
+pystore
+
 # vim
 *.swp
 
