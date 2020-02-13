@@ -10,36 +10,24 @@ import logging
 import argparse
 
 # project libs
-import keys
+# import keys
+import logger
 
 # external libs
 import numpy as np
 import pandas as pd
 import cbpro
+cb = cbpro.PublicClient()
+# cb = cbpro.AuthenticatedClient(keys.apiKey, keys.apiSecret, keys.passphrase)
 import pystore
 pystore.set_path('./pystore')
 
-# cb client
-# cb = cbpro.AuthenticatedClient(keys.apiKey, keys.apiSecret, keys.passphrase)
-cb = cbpro.PublicClient()
 
-###
-### iteratively acquire entire ETH-USD Coinbase market history
-###
-market = 'ETH-USD'
 
-# ready function to retrieve data multi-threaded
-get_hist = partial(cb.get_product_historic_rates, market)
+def get_start_date(market):
+    return { 'ETH-USD': dt(year=2017, month=5, day=18) }[market]
 
-# start date of ETH-USD on Coinbase
-# start = dt(year=2017, month=5, day=18) NOTE: the real start date
-# start = dt(year=2017, month=6, day=18)
-today = dt.today()
-# start = dt(year=2016, month=5, day=18)
 
-frames = 3 # number of frames fetched asynchronously
-width = 300 # number of results per time frame
-granularity = 60 # avail: 60 (min), 300 (5min), 900 (15min), 3600 (1hr), 21600 (6hr), 86400 (1day)
 
 def _gen_date_frames(start, until=None, width=300):
     """Generator for list of sequential time-window tuples.
@@ -79,13 +67,13 @@ def _get_data(market, start, end, granularity, attempts=15, sleep=1):
 
     def sleep_on_rate_limit(res, additional=0):
         seconds = sleep + additional
-        logger.warning('rate limited')
-        logger.warning('response: %s', res)
-        logger.warning('sleeping %s seconds', seconds)
+        log.warning('rate limited')
+        log.warning('response: %s', res)
+        log.warning('sleeping %s seconds', seconds)
         time.sleep(seconds)
 
     def retrieve_data():
-        logger.info('request data. mkt: %s, start: %s, end: %s, granularity: %s', 
+        log.info('request data. mkt: %s, start: %s, end: %s, granularity: %s', 
                 market, start, end, granularity)
         return cb.get_product_historic_rates(market, start, end, granularity)
 
@@ -98,7 +86,7 @@ def _get_data(market, start, end, granularity, attempts=15, sleep=1):
         res = retrieve_data()
     res.reverse()
 
-    logger.info('request successful. num candles: %s', len(res))
+    log.info('request successful. num candles: %s', len(res))
     return res
 
 
@@ -106,63 +94,32 @@ def _get_data(market, start, end, granularity, attempts=15, sleep=1):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
             description="retrieve and store historic candle data from Coinbase API")
-    loglevels = { 'debug': logging.DEBUG,
-                  'info': logging.INFO,
-                  'warning': logging.WARNING,
-                  'error': logging.ERROR,
-                  'critical': logging.CRITICAL}
     parser.add_argument('--loglevel', type=str, 
-            choices=loglevels.keys(), 
+            choices=logger.levels.keys(), 
             default='info', 
-            help='logger level')
+            help='log level')
     parser.add_argument('--market', type=str, 
             default='ETH-USD',
             help='Coinbase API market ticker')
+    parser.add_argument('--granularity', type=int,
+            default=60,
+            choices=[60, 300, 900, 3600, 21600, 86400],
+            help='granularity of candle data in seconds. choices: 1m, 5m, 15m, 6h, 24h')
     args = parser.parse_args()
 
     # use formatted datetime for filenames
     curr_datetime_str = dt.today().strftime('%Y-%m-%d-%H-%M-%S')
 
     # setup logging
-    # TODO change to __name__ once you've made __init__.py
-    _name = 'historic.cb'
-    config = {
-            # 'disable_existing_loggers': False,
-            'version': 1,
-            'formatters': {
-                'short': {
-                    'format': '%(asctime)s %(levelname)s: %(message)s'
-                    },
-                },
-            'handlers': {
-                'file': {
-                    'level': loglevels[args.loglevel],
-                    'formatter': 'short',
-                    'class': 'logging.FileHandler',
-                    'filename': 'logs/{:s}'.format(market),
-                    },
-                'console': {
-                    'level': loglevels[args.loglevel],
-                    'formatter': 'short',
-                    'class': 'logging.StreamHandler',
-                    },
-                },
-            'loggers': {
-                _name: {
-                    'handlers': ['file','console'],
-                    'level': loglevels[args.loglevel],
-                    },
-                },
-            }
-    import logging.config
-    logging.config.dictConfig(config)
-    logger = logging.getLogger(_name)
-    logger.info('=== new run: {:s} ==='.format(curr_datetime_str))
+    log_name = 'exchanges.cb'
+    log_filename = 'logs/{:s}'.format(args.market)
+    log = logger.setup(log_name, log_filename, logger.levels[args.loglevel])
+    log.info('=== new run: {:s} ==='.format(curr_datetime_str))
 
     # setup pystore for storing time series data
     ps_store = pystore.store('coinbase')
-    ps_collection = ps_store.collection('historic.candles')
-    ps_item = '{:s}-{:s}'.format(market, curr_datetime_str)
+    ps_collection = ps_store.collection('candles.minute')
+    ps_item = '{:s}-{:s}'.format(args.market, curr_datetime_str)
 
     # track execution time to monitor avg request time
     exec_time = time.time()
@@ -177,7 +134,7 @@ if __name__ == "__main__":
         time.sleep(0.1)
 
         # retrieve data from CB API
-        res = _get_data(market, start, end, granularity)
+        res = _get_data(args.market, start, end, args.granularity)
 
         # python -> pandas time-series dataframe
         df = pd.DataFrame(res, columns=['unixtime', 'low', 'high', 'open', 'close', 'volume'])
@@ -189,17 +146,15 @@ if __name__ == "__main__":
 
         # write dataframe to data store
         if index == 0: # first run, create data store
-            # TODO what metadata do we want?
-            meta = { 'market': market, 'granularity': granularity}
+            meta = { 'market': args.market, 'granularity': args.granularity}
             ps_collection.write(ps_item, df, metadata=meta)
         else: # all other runs, append data
             ps_collection.append(ps_item, df, npartitions=1)
-        logger.info('dataframe stored. first row: timestamp: %s, data: %s', 
+        log.info('dataframe stored. first row: timestamp: %s, data: %s', 
                 df.index[0], df.iloc[0].to_dict())
 
         # log average seconds per request
         # NOTE: Coinbase limits to 3 per second but it's far from exact
         elapsed_time = time.time() - exec_time
         avg_exec_time =  elapsed_time / (index+1.0)
-        logger.info("avg secs/req {0:.4f}".format(avg_exec_time))
-
+        log.info("avg secs/req {0:.4f}".format(avg_exec_time))
