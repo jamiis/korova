@@ -1,10 +1,13 @@
 # python libs
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
 from datetime import datetime as dt
+from datetime import date
 from datetime import timedelta
 from functools import partial
 import time
 from pprint import pprint
+import logging
+import argparse
 
 # project libs
 import keys
@@ -95,6 +98,68 @@ def _get_data(market, start, end, granularity, attempts=10, sleep=2):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+            description="retrieve and store historic candle data from Coinbase API")
+    loglevels = { 'debug': logging.DEBUG,
+                  'info': logging.INFO,
+                  'warning': logging.WARNING,
+                  'error': logging.ERROR,
+                  'critical': logging.CRITICAL}
+    parser.add_argument('--loglevel', type=str, 
+            choices=loglevels.keys(), 
+            default='info', 
+            help='logger level')
+    parser.add_argument('--market', type=str, 
+            default='ETH-USD',
+            help='Coinbase API market ticker')
+    args = parser.parse_args()
+
+    # use formatted datetime for filenames
+    curr_datetime_str = dt.today().strftime('%Y-%m-%d-%H-%M')
+
+
+    # setup logging
+    # TODO change to __name__ once you've made __init__.py
+    _name = 'historic.cb'
+    config = {
+            # 'disable_existing_loggers': False,
+            'version': 1,
+            'formatters': {
+                'short': {
+                    'format': '%(asctime)s %(levelname)s: %(message)s'
+                    },
+                },
+            'handlers': {
+                'file': {
+                    'level': loglevels[args.loglevel],
+                    'formatter': 'short',
+                    'class': 'logging.FileHandler',
+                    # 'filename': 'logs/{:s}-{:s}'.format(curr_datetime_str, market),
+                    'filename': 'logs/{:s}'.format(market),
+                    },
+                'console': {
+                    'level': loglevels[args.loglevel],
+                    'formatter': 'short',
+                    'class': 'logging.StreamHandler',
+                    },
+                },
+            'loggers': {
+                _name: {
+                    'handlers': ['file','console'],
+                    'level': loglevels[args.loglevel],
+                    },
+                },
+            }
+    import logging.config
+    logging.config.dictConfig(config)
+    logger = logging.getLogger(_name)
+
+
+    # setup pystore for storing time series data
+    store = pystore.store(market)
+    collection = store.collection(curr_datetime_str)
+
+    # track execution time to monitor avg request time
     exec_time = time.time()
 
     start_date = dt(year=2017, month=6, day=18)
