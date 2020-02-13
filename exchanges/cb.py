@@ -45,7 +45,7 @@ def _gen_date_frames(start, until=None, width=300):
 
 
 
-def _get_data(market, start, end, granularity, attempts=15, sleep=1):
+def get_data(market, start, end, granularity, attempts=15, sleep=1):
     """Retrieve historical data from Coinbase API.
     Attempts resiliency to rate limiting by delaying 
     new requests after halted.
@@ -84,9 +84,8 @@ def _get_data(market, start, end, granularity, attempts=15, sleep=1):
             break
         sleep_on_rate_limit(res, additional=count)
         res = retrieve_data()
+    log.info('request successful')
     res.reverse()
-
-    log.info('request successful. num candles: %s', len(res))
     return res
 
 
@@ -124,17 +123,15 @@ if __name__ == "__main__":
     # track execution time to monitor avg request time
     exec_time = time.time()
 
-    # TODO start date needs to come from a file or argparse
-    #      this start date is for ETH-USD
-    start_date = dt(year=2017, month=6, day=18)
+    start_date = get_start_date(args.market)
     dates = _gen_date_frames(start_date)
 
     for index, (start, end) in enumerate(dates):
-        # CB API limited to 3 reqs/sec
-        time.sleep(0.1)
+        # CB API limited to 3 reqs/sec but it's not accurate at all
+        time.sleep(0.2)
 
         # retrieve data from CB API
-        res = _get_data(args.market, start, end, args.granularity)
+        res = get_data(args.market, start, end, args.granularity)
 
         # python -> pandas time-series dataframe
         df = pd.DataFrame(res, columns=['unixtime', 'low', 'high', 'open', 'close', 'volume'])
@@ -150,7 +147,8 @@ if __name__ == "__main__":
             ps_collection.write(ps_item, df, metadata=meta)
         else: # all other runs, append data
             ps_collection.append(ps_item, df, npartitions=1)
-        log.info('dataframe stored. first row: timestamp: %s, data: %s', 
+        log.info('dataframe stored. num rows: %s', df.shape[0])
+        log.info('first row: timestamp: %s, data: %s', 
                 df.index[0], df.iloc[0].to_dict())
 
         # log average seconds per request
