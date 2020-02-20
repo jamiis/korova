@@ -100,7 +100,7 @@ if __name__ == "__main__":
             default='info', 
             help='log level')
     parser.add_argument('--market', type=str, 
-            default='ETH-USD',
+            required=True,
             help='Coinbase API market ticker')
     parser.add_argument('--granularity', type=int,
             default=60,
