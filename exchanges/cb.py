@@ -42,7 +42,7 @@ def _gen_date_frames(start, until=None, width=300):
     end = start + timedelta(minutes=width)
     while start <= until if until else dt.today():
         yield start, end
-        start = end + timedelta(minutes=width)
+        start = end
         end = start + timedelta(minutes=width)
 
 
