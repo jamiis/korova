@@ -25,7 +25,9 @@ pystore.set_path('./pystore')
 
 
 def get_start_date(market):
-    return { 'ETH-USD': dt(year=2017, month=5, day=18) }[market]
+    return {'ETH-USD': dt(year=2016, month=6, day=17),
+            'BTC-USD': dt(year=2015, month=7, day=21)
+            }[market]
 
 
 
