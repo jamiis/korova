@@ -81,7 +81,7 @@ def get_data(market, start, end, granularity, attempts=15, sleep=1):
 
     res = retrieve_data()
     # if rate limited, sleep and try to retrieve data again and again
-    for count, _ in enumerate(range(0, attempts)):
+    for count in range(0, attempts):
         if not is_rate_limited(res):
             break
         sleep_on_rate_limit(res, additional=count)
@@ -113,14 +113,15 @@ if __name__ == "__main__":
 
     # setup logging
     log_name = 'exchanges.cb'
-    log_filename = 'logs/{:s}'.format(args.market)
+    log_filename = 'logs/{:s}-{:s}'.format(args.market, curr_datetime_str)
     log = logger.setup(log_name, log_filename, logger.levels[args.loglevel])
-    log.info('=== new run: {:s} ==='.format(curr_datetime_str))
 
     # setup pystore for storing time series data
     ps_store = pystore.store('coinbase')
     ps_collection = ps_store.collection('candles.minute')
-    ps_item = '{:s}-{:s}'.format(args.market, curr_datetime_str)
+    ps_item = '{:s}'.format(args.market)
+
+    ps_item_exists = ps_item in ps_collection.list_items()
 
     # track execution time to monitor avg request time
     exec_time = time.time()
@@ -128,33 +129,36 @@ if __name__ == "__main__":
     start_date = get_start_date(args.market)
     dates = _gen_date_frames(start_date)
 
-    for index, (start, end) in enumerate(dates):
+    for count, (start, end) in enumerate(dates):
         # CB API limited to 3 reqs/sec but it's not accurate at all
         time.sleep(0.2)
 
         # retrieve data from CB API
         res = get_data(args.market, start, end, args.granularity)
+        if not res:
+            log.warn("no API data for date: %s to %s", start, end)
 
-        # python -> pandas time-series dataframe
-        df = pd.DataFrame(res, columns=['unixtime', 'low', 'high', 'open', 'close', 'volume'])
-        df['unixtime'] = pd.to_datetime(df['unixtime'], unit='s')
-        df = df.set_index('unixtime')
+        if res:
+            # python -> pandas time-series dataframe
+            df = pd.DataFrame(res, columns=['unixtime', 'low', 'high', 'open', 'close', 'volume'])
+            df['unixtime'] = pd.to_datetime(df['unixtime'], unit='s') # TODO unit='ms'?
+            df = df.set_index('unixtime')
 
-        # TODO confirm this data structure is the one we want to be storing.
-        #      mostly, indexing by pd.DateTime object
-
-        # write dataframe to data store
-        if index == 0: # first run, create data store
-            meta = { 'market': args.market, 'granularity': args.granularity}
-            ps_collection.write(ps_item, df, metadata=meta)
-        else: # all other runs, append data
-            ps_collection.append(ps_item, df, npartitions=1)
-        log.info('dataframe stored. num rows: %s', df.shape[0])
-        log.info('first row: timestamp: %s, data: %s', 
-                df.index[0], df.iloc[0].to_dict())
+            # write dataframe to data store
+            if not ps_item_exists: # first run, create data store
+                meta = { 'market': args.market, 'granularity': args.granularity}
+                ps_collection.write(ps_item, df, metadata=meta)
+                ps_item_exists = True
+            else: # all other runs, append data
+                ps_collection.append(ps_item, df, npartitions=1)
+            log.info('dataframe stored. num rows: %s', df.shape[0])
+            log.info('first row: timestamp: %s, data: %s', 
+                    df.index[0], df.iloc[0].to_dict())
 
         # log average seconds per request
         # NOTE: Coinbase limits to 3 per second but it's far from exact
         elapsed_time = time.time() - exec_time
-        avg_exec_time =  elapsed_time / (index+1.0)
+        avg_exec_time =  elapsed_time / (count+1.0)
         log.info("avg secs/req {0:.4f}".format(avg_exec_time))
+
+    # TODO might be smart to load dataset, sort by date, write to disk
