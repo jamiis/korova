@@ -1,0 +1,5 @@
+name: korova
+channels:
+  - defaults
+prefix: /home/jamis/anaconda3/envs/korova
+
