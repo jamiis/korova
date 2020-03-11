@@ -1,5 +1,9 @@
-name: korova
+name: korova-exchanges
 channels:
   - defaults
-prefix: /home/jamis/anaconda3/envs/korova
-
+dependencies:
+  - ipython
+  - pip
+  - python=3.7
+  - pandas
+prefix: /home/jamis/anaconda3/envs/korova-exchanges

@@ -1,5 +1,10 @@
-name: korova
+name: korova-tf
 channels:
   - defaults
-prefix: /home/jamis/anaconda3/envs/korova
-
+dependencies:
+  - pip
+  - python=3.7
+  - ipython
+  - pandas
+  - tensorflow-gpu
+prefix: /home/jamis/anaconda3/envs/korova-tf
