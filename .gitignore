@@ -1,5 +1,7 @@
 # files
 keys.py
+logs
+data
 
 # dirs
 pystore
